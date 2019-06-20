@@ -6,6 +6,8 @@
 // @match        https://skribbl.io
 // @require      https://code.jquery.com/jquery-3.4.1.min.js
 // @grant        GM_addStyle
+// @grant        GM_setValue
+// @grant        GM_getValue
 // ==/UserScript==
 
 let $=window.jQuery;
@@ -60,6 +62,16 @@ GM_addStyle(
          }
          body {
            background: url(http://vvzhishaji.com/wp-content/uploads/2018/08/Dark-Background.png);
+         }
+         #skribblModBox {
+           display: flex;
+           padding: 20px;
+           margin-top: 20px;
+           background-color: white;
+           border-radius: 0px;
+         }
+         #wordsList {
+           width: 75%;
          }`);
 
 $(document).ready(function() {
@@ -130,4 +142,49 @@ $(document).ready(function() {
         }
         location.reload();
     });
+
+    var gameStart=setInterval(() => {
+        let words=(typeof GM_getValue("wordsList")!=="undefined")?GM_getValue("wordsList"):[];
+        if ($("div#screenGame").length) {
+            $("div#screenGame").append(
+            `<div id="skribblModBox">
+               <div id="wordsList"></div>
+               <div id="skribblModOptions">
+                 Fréquence : <input type="number" name="autoGuesserFrequency" id="autoGuesserFrequency" value="1500">
+               </div>
+             </div>`);
+            clearInterval(gameStart);
+            gameStart=null;
+            var registerWords=setInterval(() => {
+                if ($(".content .text:contains('The word was')").length) {
+                    let words=(typeof GM_getValue("wordsList")!=="undefined")?GM_getValue("wordsList"):[];
+                    if (words.indexOf($("#content .text").text().split(" : ")[1])<=-1) {
+                        words.push($("#content .text").text().split(" : ")[1]);
+                    }
+                    GM_setValue("wordsList",words);
+                }
+            },1500);
+            var autoGuess=setInterval(() => {
+                let incompleteSentence=$("#currentWord").text();
+                let words=(typeof GM_getValue("wordsList")!=="undefined")?GM_getValue("wordsList"):[];
+                words=words.filter((word) => {
+                    let checkPattern=new RegExp(incompleteSentence.replace(/_/g,"."),"");
+                    return checkPattern.test(word) && word.length===incompleteSentence.length;
+                });
+                if (!$("#wordsList li span").length && $("#overlay").css("opacity")==="0") {
+                    let appendWords=words.map((word) => {
+                        return $(`<li><span>${word}</li></span>`);
+                    });
+                    $("#wordsList").append(appendWords);
+                }
+                else if ($("#wordsList li span").length) {
+                    $("#wordsList li span").filter((word) => {
+                        return words.indexOf($(word).text())<0;
+                    }).remove();
+                    $("#inputChat").val($("#wordsList li span").first().text());
+                    $("#wordsList li span").first().remove();
+                }
+            },$("#autoGuesserFrequency").val());
+        }
+    },500);
 });
