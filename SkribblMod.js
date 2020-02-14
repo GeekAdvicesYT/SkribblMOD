@@ -1,6 +1,6 @@
-// ==UserScript==
+﻿// ==UserScript==
 // @name         SkribblMOD
-// @description  Ultimate hack for Skribbl (auto-completion, auto-answer [+ Wikipedia/Wiktionary search], empty avatar)
+// @description  Enjoy the hack power !
 // @author       GeekAdviceYT
 // @match        https://skribbl.io/*
 // @require      https://code.jquery.com/jquery-3.4.1.min.js
@@ -116,7 +116,7 @@ margin-top: 20px;
 margin-bottom: 20px;
 background-color: white;
 border-radius: 0px;
-background-image: url(https://bitbucket.org/GeekAdviceYT/skribblmod/raw/28d5d1a27dfdb2473391cc6beb04dc07046f1c23/dragon.png);
+background-image: url(https://raw.githubusercontent.com/GeekAdvicesYT/SkribblMOD/master/dragon.png);
 background-repeat: no-repeat;
 background-position-x: 108%;
 background-position-y: -48px;
@@ -172,6 +172,7 @@ $(document).ready(function() {
 
     var selectedLanguage=$("#loginLanguage").val();
     var words;
+    var acWords;
     var alreadyChoosenWords=[];
     var isNotDrawer;
     var reset=true;
@@ -208,6 +209,198 @@ $(document).ready(function() {
         Turkish: "tr"
     };
 
+    function concatUniqueToArray(arrayOne, arrayTwo) {
+        return arrayOne.concat(arrayTwo.filter((item) => arrayOne.indexOf(item)<0));
+    }
+
+    function retrieveWikiWords(wikiPattern, pattern, userSentence="", autoCompletion=false, category=0) {
+        if (searchSentence!==$("#currentWord").text() || autoCompletion || category>0) {
+            if (!$("#overlay").is(":visible")) {
+                let categories=[`${selectedLanguage}_nouns`,"Car_brands","Drink_brands","Home_video_game_consoles","Handheld_video_game_consoles"];
+                let excludedCategories=["","","","",""];
+                let searchLanguage, url;
+
+                if (typeof wikiLanguages[selectedLanguage]!=="undefined") {
+                    searchLanguage=wikiLanguages[selectedLanguage];
+                }
+                else {
+                    searchLanguage="en";
+                }
+
+                if (category===0) {
+                    $("#wordsList").empty();
+                    $("#skribblModBox").prepend("<div id='wikiSearch'>Recherche en cours sur Wiktionary ...</div>");
+                    searchingInWiki=true;
+                }
+                else {
+                    $("#wikiSearch").text(`Recherche en cours sur ${(category<2)?"Wiktionary":"Wikipédia"} ...`);
+                }
+
+                ajaxRequest=$.get(`https://en.${(category<2)?"wiktionary":"wikipedia"}.org/w/api.php?action=query&list=search&format=json&srsearch=intitle:/${wikiPattern}/+incategory:${categories[category]}${excludedCategories[category]}&srlimit=500&origin=*`, (e) => {
+                    if (!autoCompletion) {
+                        wikiDictionary=concatUniqueToArray(wikiDictionary,$(e)[0].query.search.reduce((acc,result) => {
+                            (pattern.test(result.title.toLowerCase()))?acc.push(result.title):null;
+                            return acc;
+                        },[]).sort());
+                    }
+                    else {
+                        acWords=concatUniqueToArray(acWords,$(e)[0].query.search.reduce((acc,result) => {
+                            (pattern.test(result.title.toLowerCase()))?acc.push(result.title):null;
+                            return acc;
+                        },[]).sort());
+
+                        $("#wordsList").empty().append(acWords.map((word) => {
+                            return $(`<li><span>${word}</li></span>`);
+                        }));
+                    }
+
+                    if (category<categories.length-1 && !($(".player.guessedWord .name:contains('You')").length && $(".content .text:contains('The word was')").length) && searchingInWiki) {
+                        retrieveWikiWords(wikiPattern, pattern, userSentence, autoCompletion, category+1);
+                    }
+                    else if (category===categories.length-1) {
+                        $("#wikiSearch").remove();
+                        searchingInWiki=false;
+                    }
+
+                });
+            }
+            searchSentence=$("#currentWord").text();
+        }
+    }
+
+    function startBOT() {
+        if ($("div#screenGame").is(":visible") && !$("#skribblModBox").length) {
+            $("div#screenGame").after(`
+<div id="skribblModBox" style="display:none">
+<div id="wordsList"></div>
+</div>`);
+            registerWords=setInterval(() => {
+                words=(Array.isArray(JSON.parse(GM_getValue("wordsList"))[selectedLanguage]))?JSON.parse(GM_getValue("wordsList")):{};
+
+                if (typeof words[selectedLanguage]==="undefined") {
+                    words[selectedLanguage]=[];
+                }
+                /*
+                if ($(".wordContainer").is(":visible")) {
+                    let wordContainerWords=$(".wordContainer .word");
+
+                    Object.keys(wordContainerWords).forEach((key) => {
+                        if (words[selectedLanguage].indexOf(wordContainerWords[key].innerHTML)<=-1 && wordContainerWords[key].innerHTML!=null) {
+                            words[selectedLanguage].push(wordContainerWords[key].innerHTML);
+                        }
+                    });
+                }
+
+                if ($(".content .text:contains('The word was')").length) {
+                    if (words[selectedLanguage].indexOf($("#overlay .content .text").text().split(": ")[1])<=-1) {
+                        words[selectedLanguage].push($("#overlay .content .text").text().split(": ")[1]);
+                    }
+                }
+
+                words[selectedLanguage].sort();
+*/
+                GM_setValue("wordsList",JSON.stringify(words));
+            },1000);
+        }
+    }
+
+    function autoGuessBOT() {
+        if ($("#overlay").css("opacity")>0) {
+            alreadyChoosenWords=[];
+            acWords=[];
+            $("#wordsList").empty();
+        }
+
+        if ($("#screenGame").is(":visible")) {
+            $("#skribblModBox").css({display: ""});
+        }
+        else {
+            $("#skribblModBox").css({display: "none"});
+        }
+
+        if ($("#autoGuesserFrequency").val()<950) {
+            $("#autoGuesserFrequency").val(950);
+        }
+
+        isNotDrawer=new RegExp("_").test($("#currentWord").text());
+        if (typeof words!=="undefined" && typeof words[selectedLanguage]!=="undefined" && isNotDrawer && $("#overlay").css("opacity")==="0" && $("input[name='activateAutoTyping']").is(":checked") && !$("input[name='activateAutocompletion']").is(":checked") && $("input[name='activateMod']").is(":checked") && !$(".player.guessedWord .name:contains('You')").length) {
+
+            let incompleteSentence=unsafeWindow.$("#currentWord").text();
+            reset=false;
+            let REobj=incompleteSentence.replace(/_/g,".");
+            let checkPattern=new RegExp("^"+incompleteSentence.replace(/_/g,"[^ (),\.\'\-]")+"$","");
+
+            words=words[selectedLanguage].reduce((acc,word) => {
+                (checkPattern.test(word) && alreadyChoosenWords.indexOf(word)<=-1)?acc.push(word):null;
+                return acc;
+            },[]).sort();
+
+            let wikiDictionaryHTML;
+            let wordsHTML;
+
+            if ((!wikiDictionary.length && !searchingInWiki) || searchSentence!==$("#currentWord").text()) {
+                if (searchingInWiki) {
+                    ajaxRequest.abort();
+                }
+                searchingInWiki=false;
+                retrieveWikiWords(REobj,checkPattern);
+            }
+
+            if (wikiDictionary.length) {
+                words=concatUniqueToArray(words,wikiDictionary.reduce((acc,word) => {
+                    (checkPattern.test(word) && alreadyChoosenWords.indexOf(word)<=-1)?acc.push(word):null;
+                    return acc;
+                },[]).sort());
+
+
+
+                wordsHTML=words.map((word) => {
+                    return $(`<li><span>${word}</span></li>`);
+                });
+            }
+            else {
+                wordsHTML=words.map((word) => {
+                    return $(`<li><span>${word}</li></span>`);
+                });
+            }
+
+            console.log(words.length)
+            $("#wordsList").empty().append(wordsHTML);
+
+            let typedWordIndexInArray=words.indexOf($("#inputChat").val())>=0;
+            if (typedWordIndexInArray) {
+                unsafeWindow.$("input#inputChat").submit();
+                alreadyChoosenWords.push($("#inputChat").val());
+                $("#wordsList li").eq(typedWordIndexInArray).remove();
+            }
+            else if (words.length) {
+                unsafeWindow.$("input#inputChat").val($("#wordsList li span").first().text()).submit();
+                alreadyChoosenWords.push($("#wordsList li span").first().text());
+                $("#wordsList li").first().remove();
+            }
+
+        }
+        else if ($(".player.guessedWord .name:contains('You')").length || $(".content .text:contains('The word was')").length) {
+            wikiDictionary=[];
+            acWords=[];
+            searchingInWiki=false;
+            $("#wordsList").empty();
+            $("#wikiSearch").remove();
+        }
+    };
+
+    function resetAI() {
+        if (ajaxRequest!==undefined) {
+            ajaxRequest.abort();
+        }
+
+        wikiDictionary=[];
+        words=[];
+        acWords=[];
+        searchSentence="";
+        searchingInWiki=false;
+    }
+
     $("html body").prepend(`
 <div id="skribblModContainer">
 <div id="skribblModMenu">
@@ -242,11 +435,11 @@ $(document).ready(function() {
 </div>
 <div class="optionContainer">
 <span id="frequency">Fréquence (ms) :</span>
-<input type="number" name="autoGuesserFrequency" id="autoGuesserFrequency" min="1000" step="50" value=1000">
+<input type="number" name="autoGuesserFrequency" id="autoGuesserFrequency" min="950" step="50" value=1000">
 </div>
 </div>
 <div id="skribblModLogo">
-<img src="https://bitbucket.org/GeekAdviceYT/skribblmod/raw/263ec9532e2c54c630cd6e11abe1d2f0e3eb1326/SkribblMod.png" alt="Logo SkribblMod" />
+<img src="https://raw.githubusercontent.com/GeekAdvicesYT/SkribblMOD/master/SkribblMod.png" alt="Logo SkribblMod" />
 </div>
 </div>
 <div id="fadeBoxSkribblMod">
@@ -310,8 +503,9 @@ $(document).ready(function() {
                 options.activateAutoTyping="";
             }
 
+            resetAI();
+            $("#wikiSearch").remove();
             $("#wordsList").empty();
-            $("#wikiSearch").empty();
             localStorage.setItem("skribblModOptions",JSON.stringify(options));
         }
     });
@@ -329,8 +523,9 @@ $(document).ready(function() {
                 options.activateAutocompletion="";
             }
 
+            resetAI();
+            $("#wikiSearch").remove();
             $("#wordsList").empty();
-            $("#wikiSearch").empty();
             localStorage.setItem("skribblModOptions",JSON.stringify(options));
         }
     });
@@ -356,276 +551,90 @@ $(document).ready(function() {
 
     $(document).on("change","#autoGuesserFrequency", (e) => {
         clearInterval(autoGuess);
-        autoGuess=setInterval(autoGuessBOT(),$(e).val());
+        autoGuess=setInterval(autoGuessBOT,$("#autoGuesserFrequency").val());
     });
-
-    function startBOT() {
-        if ($("div#screenGame").is(":visible") && !$("#skribblModBox").length) {
-            $("div#screenGame").after(`
-<div id="skribblModBox" style="display:none">
-<div id="wordsList"></div>
-</div>`);
-            registerWords=setInterval(() => {
-                words=(Array.isArray(JSON.parse(GM_getValue("wordsList"))[selectedLanguage]))?JSON.parse(GM_getValue("wordsList")):{};
-
-                if (typeof words[selectedLanguage]==="undefined") {
-                    words[selectedLanguage]=[];
-                }
-                /*
-                if ($(".wordContainer").is(":visible")) {
-                    let wordContainerWords=$(".wordContainer .word");
-
-                    Object.keys(wordContainerWords).forEach((key) => {
-                        if (words[selectedLanguage].indexOf(wordContainerWords[key].innerHTML)<=-1 && wordContainerWords[key].innerHTML!=null) {
-                            words[selectedLanguage].push(wordContainerWords[key].innerHTML);
-                        }
-                    });
-                }
-
-                if ($(".content .text:contains('The word was')").length) {
-                    if (words[selectedLanguage].indexOf($("#overlay .content .text").text().split(": ")[1])<=-1) {
-                        words[selectedLanguage].push($("#overlay .content .text").text().split(": ")[1]);
-                    }
-                }
-
-                words[selectedLanguage].sort();
-*/
-                GM_setValue("wordsList",JSON.stringify(words));
-            },1000);
-        }
-    }
-
-    function autoGuessBOT() {
-        if ($("#overlay").css("opacity")>0) {
-            alreadyChoosenWords=[];
-            $("#wordsList").empty();
-        }
-
-        if ($("#screenGame").is(":visible")) {
-            $("#skribblModBox").css({display: ""});
-        }
-        else {
-            $("#skribblModBox").css({display: "none"});
-        }
-
-        if ($("#autoGuesserFrequency").val()<1000) {
-            $("#autoGuesserFrequency").val(1000);
-        }
-
-        isNotDrawer=new RegExp("_").test($("#currentWord").text());
-        if (typeof words!=="undefined" && typeof words[selectedLanguage]!=="undefined" && isNotDrawer && $("#overlay").css("opacity")==="0" && $("input[name='activateAutoTyping']").is(":checked") && !$("input[name='activateAutocompletion']").is(":checked") && $("input[name='activateMod']").is(":checked") && !$(".player.guessedWord .name:contains('You')").length) {
-
-            let incompleteSentence=unsafeWindow.$("#currentWord").text();
-            reset=false;
-            let REobj=incompleteSentence.replace(/_/g,".");
-            let checkPattern=new RegExp("^"+incompleteSentence.replace(/_/g,"[^ (),\.\-]")+"$","");
-
-            words=words[selectedLanguage].reduce((acc,word) => {
-                (checkPattern.test(word) && alreadyChoosenWords.indexOf(word)<=-1)?acc.push(word):null;
-                return acc;
-            },[]).sort();
-
-            if (words.length) {
-
-                let wordsHTML=words.map((word) => {
-                    return $(`<li><span>${word}</li></span>`);
-                });
-                $("#wordsList").empty().append(wordsHTML);
-                unsafeWindow.$("input#inputChat").val($("#wordsList li span").first().text()).submit();
-                alreadyChoosenWords.push($("#wordsList li span").first().text());
-                $("#wordsList li").first().remove();
-            }
-            else if ((!wikiDictionary.length && !searchingInWiki) || searchSentence!==$("#currentWord").text()) {
-                searchingInWiki=false;
-                if (typeof ajaxRequest!=="undefined" && ajaxRequest.state=="pending") {
-                    ajaxRequest.stop();
-                }
-                regexWikiDictionary(REobj,checkPattern);
-            }
-            else {
-                wikiDictionary=wikiDictionary.filter((word) => {
-                    return (checkPattern.test(word) && alreadyChoosenWords.indexOf(word)<=-1);
-                }).sort();
-
-                let wikiDictionaryHTML=wikiDictionary.map((result) => {
-                    return $(`<li><span>${result}</li></span>`);
-                });
-
-                $("#wordsList").empty().append(wikiDictionaryHTML);
-                unsafeWindow.$("input#inputChat").val($("#wordsList li span").first().text()).submit();
-                alreadyChoosenWords.push($("#wordsList li span").first().text());
-                $("#wordsList li").first().remove();
-            }
-        }
-        else if ($(".player.guessedWord .name:contains('You')").length || $(".content .text:contains('The word was')").length) {
-            wikiDictionary=[];
-            searchingInWiki=false;
-            $("#wordsList").empty();
-            $("#wikiSearch").remove();
-        }
-    };
-
-    function concatUniqueToArray(arrayOne, arrayTwo) {
-        return arrayOne.concat(arrayTwo.filter((item) => arrayOne.indexOf(item)<0));
-    }
-
-    function retrieveWikiWords(wikiPattern, pattern, userSentence="", autoCompletion=false, category=0) {
-        if (!$("#overlay").is(":visible")) {
-
-            let categories=[`${selectedLanguage}_nouns`,`${selectedLanguage}_proper_nouns`,"Car_brands","Drink_brands","Home_video_game_consoles","Handheld_video_game_consoles"];
-            let searchLanguage, url;
-
-            if (typeof wikiLanguages[selectedLanguage]!=="undefined") {
-                searchLanguage=wikiLanguages[selectedLanguage];
-            }
-            else {
-                searchLanguage="en";
-            }
-
-            if (!autoCompletion) {
-                if (category===0) {
-                    $("#wordsList").empty();
-                    $("#skribblModBox").prepend("<div id='wikiSearch'>Recherche en cours sur Wikipédia ...</div>");
-                    searchingInWiki=true;
-                }
-                else {
-                    $("#wikiSearch").text(`Recherche en cours sur ${(category<2)?"Wiktionary":"Wikipédia"} ...`);
-                }
-                ajaxRequest=$.get(`https://en.${(category<2)?"wiktionary":"wikipedia"}.org/w/api.php?action=query&list=search&format=json&srsearch=intitle:/${wikiPattern}/+incategory:${categories[category]}&srlimit=500&origin=*`, (e) => {
-                    wikiDictionary=concatUniqueToArray(wikiDictionary,$(e)[0].query.search.reduce((acc,result) => {
-                        (pattern.test(result.title.toLowerCase()))?acc.push(result.title):null;
-                        return acc;
-                    },[]).sort());
-
-                    let registeredWords=words.map((word) => {
-                        return (pattern.test(word) && alreadyChoosenWords.indexOf(word)<=0);
-                    });
-
-                    for (let i=0;i<words.length;i++) {
-                        (pattern.test(words[i]))?wikiDictionary.unshift(words[i]):null;
-                    }
-
-                    let wikiDictionaryHTML=wikiDictionary.map((word) => {
-                        return $(`<li><span>${word}</span></li>`);
-                    });
-                    $("#wordsList").empty().append(wikiDictionaryHTML);
-
-                    if (category<categories.length-1 && !($(".player.guessedWord .name:contains('You')").length && !$(".content .text:contains('The word was')").length) && searchingInWiki) {
-                        retrieveWikiWords(wikiPattern, pattern, userSentence, autoCompletion, category+1);
-                    }
-                    else if (category===categories.length-1) {
-                        $("#wikiSearch").remove();
-                    }
-
-                });
-            }
-            else {
-                $("#skribblModBox").prepend("<div id='wikiSearch'>Recherche en cours sur Wikipédia ...</div>");
-                searchingInWiki=true;
-                ajaxRequest=$.get(`https://${searchLanguage}.wikipedia.org/w/api.php?action=opensearch&search=${userSentence}&limit=500&origin=*`, (e) => {
-                    if ($(e)[1].length) {
-                        wikiDictionary=$(e)[1].reduce((acc,result) => {
-                            (pattern.test(result.toLowerCase()))?acc.push(result):null;
-                            return acc;
-                        },[]).sort();
-
-                        let wikiDictionaryHTML=wikiDictionary.map((word) => {
-                            return $(`<li><span>${word}</span></li>`);
-                        });
-                        $("#wordsList").append(wikiDictionaryHTML);
-
-                    }
-                    $("#wikiSearch").remove();
-                    searchingInWiki=false;
-                });
-            }
-        }
-    }
-
-    function regexWikiDictionary(wikiPattern, pattern, userSentence=null, autoCompletion=false) {
-        if (searchSentence!==$("#currentWord").text() || autoCompletion) {
-            retrieveWikiWords(wikiPattern, pattern, userSentence, autoCompletion);
-            searchSentence=$("#currentWord").text();
-        }
-    }
 
     gameStart=setInterval(startBOT,250);
     autoGuess=setInterval(autoGuessBOT,$("#autoGuesserFrequency").val());
 
+    $(document).on("keydown","input#inputChat", (e) => {
+        if (e.keyCode===13) {
+            isNotDrawer=new RegExp("_").test($("#currentWord").text());
 
-    $(document).on("keyup","input#inputChat", (e) => {
-        if ($("input[name='activateAutocompletion']").is(":checked") && !($("input[name='activateAutoTyping']").is(":checked")) && $("input[name='activateMod']").is(":checked") && !$("#overlay").is(":visible") && !$(".player.guessedWord .name:contains('You')").length) {
-            userSentence=$("input#inputChat").val();
-            let incompleteSentence=unsafeWindow.$("#currentWord").text();
+            if (isNotDrawer && $("input[name='activateMod']").is(":checked") && !$("#overlay").is(":visible") && !$(".player.guessedWord .name:contains('You')").length) {
+                if ($("input[name='activateAutocompletion']").is(":checked") || $("input[name='activateAutoTyping']").is(":checked")) {
+                    let i=acWords.indexOf($("#inputChat").val());
 
-            if (incompleteSentence.charAt(userSentence.length)!=="_") {
-                e.preventDefault();
-                userSentence=userSentence+incompleteSentence.charAt(userSentence.length);
-
-                $("input#inputChat").val(userSentence);
-            }
-
-
-            if (typeof words!=="undefined" && typeof words[selectedLanguage]!=="undefined") {
-                let autoCompletionPattern="^";
-
-                wikiDictionary=[];
-
-                for (let i=0;i<incompleteSentence.length;i++) {
-                    if (i<userSentence.length) {
-                        autoCompletionPattern+=userSentence.charAt(i);
-                    }
-                    else if (incompleteSentence.charAt(i)==="_") {
-                        autoCompletionPattern+="[^ (),\.\-]";
-                    }
-                    else {
-                        autoCompletionPattern+=incompleteSentence.charAt(i);
+                    if (i>=0) {
+                        alreadyChoosenWords.push($("#inputChat").val());
+                        $("#wordsList li").eq(i).remove();
                     }
                 }
+            }
+        }
+    });
 
-                autoCompletionPattern+="$";
+    $(document).on("keyup","input#inputChat", (e) => {
+        isNotDrawer=new RegExp("_").test($("#currentWord").text());
+        if (isNotDrawer && $("input[name='activateAutocompletion']").is(":checked") && !($("input[name='activateAutoTyping']").is(":checked")) && $("input[name='activateMod']").is(":checked") && !$("#overlay").is(":visible") && !$(".player.guessedWord .name:contains('You')").length) {
 
-                let checkPattern=new RegExp(autoCompletionPattern);
+            if (e.keyCode!==13 && userSentence!==$("#inputChat").val()) {
+                userSentence=$("input#inputChat").val();
+                let incompleteSentence=unsafeWindow.$("#currentWord").text();
 
-                $("#wordsList").empty()
+                if (incompleteSentence.charAt(userSentence.length)!=="_") {
+                    e.preventDefault();
+                    userSentence=userSentence+incompleteSentence.charAt(userSentence.length);
+                    $("input#inputChat").val(userSentence);
+                }
 
-                if (!wikiDictionary.length) {
-                    words=words[selectedLanguage].reduce((acc,result) => {
-                        (checkPattern.test(result) && alreadyChoosenWords.indexOf(result)<=-1)?acc.push(`<li><span>${result}</span></li>`):null;
+                if (typeof words!=="undefined" && typeof words[selectedLanguage]!=="undefined") {
+
+                    let autoCompletionPattern="^";
+                    let wikiPattern="";
+
+                    for (let i=0;i<incompleteSentence.length;i++) {
+                        if (i<userSentence.length) {
+                            autoCompletionPattern+=userSentence.charAt(i);
+                            wikiPattern+=userSentence.charAt(i);
+                        }
+                        else if (incompleteSentence.charAt(i)==="_") {
+                            autoCompletionPattern+="[^ (),\.\'\-]";
+                            wikiPattern+="[^ (),\.\'\-]";
+                        }
+                        else {
+                            autoCompletionPattern+=incompleteSentence.charAt(i);
+                            wikiPattern+=incompleteSentence.charAt(i);
+                        }
+                    }
+                    autoCompletionPattern+="$";
+
+                    let checkPattern=new RegExp(autoCompletionPattern);
+                    let wordsHTML;
+
+                    acWords=words[selectedLanguage].reduce((acc,result) => {
+                        (checkPattern.test(result) && alreadyChoosenWords.indexOf(result)<=-1)?acc.push(result):null;
                         return acc;
                     },[]).sort();
 
-                    words=words.map((data) => {
-                        return $(data);
-                    });
+                    $("#wikiSearch").remove();
 
-                    $("#wordsList").append(words);
-                }
+                    if (ajaxRequest!==undefined) {
+                        ajaxRequest.abort();
+                        searchingInWiki=false;
+                    }
+                    retrieveWikiWords(wikiPattern,checkPattern,userSentence,true);
 
-                if (words.length) {
-                    unsafeWindow.$("input#inputChat").val($("#wordsList li span").first().text()).submit();
-                    alreadyChoosenWords.push($("#wordsList li span").first().text());
-                }
+                    $("#wordsList").empty().append(wordsHTML);
 
-                if (typeof ajaxRequest!=="undefined" && ajaxRequest.state=="pending") {
-                    ajaxRequest.stop();
-                    ajaxRequest=undefined;
                 }
-                regexWikiDictionary(checkPattern,checkPattern,userSentence,true);
             }
         }
     });
 
     setInterval(() => {
         if ($("#modalKicked").is(":visible")) {
-            if (typeof ajaxRequest!=="undefined") {
-                ajaxRequest.stop();
-                ajaxRequest=undefined;
-            }
-
-            alreadyChoosenWords=[];
-            searchSentence="";
-            wikiDictionary=[];
+            resetAI();
             $("#skribblModBox").remove();
         }
     },1000);
