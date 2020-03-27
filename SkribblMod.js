@@ -121,14 +121,24 @@ background-position-x: 108%;
 background-position-y: -48px;
 background-size: 296px;
 min-height: 196px;
+position: relative;
 }
 #skribblModBox a {
 color: blue;
 cursor: pointer;
 }
+#flexList {
+display: flex;
+position: relative;
+top: 20px;
+}
 #wordsList {
 width: 75%;
 column-count: 3;
+}
+#listOptions {
+position: absolute;
+right: 5%;
 }
 i {
 border: solid white;
@@ -156,6 +166,7 @@ transition: 0.5s;
 }
 #wikiSearch {
 font-weight: bold;
+position: absolute;
 }
 #regexError {
 font-weight: bold;
@@ -169,7 +180,8 @@ color: red;
             activateSkribblMod: "",
             hiddenSkin: "",
             activateAutoTyping: "",
-            activateAutocompletion: ""
+            activateAutocompletion: "",
+            autoChoose: ""
         };
 
         let options=(JSON.parse(localStorage.getItem("skribblModOptions"))!==null)?JSON.parse(localStorage.getItem("skribblModOptions")):beginOptions;
@@ -267,20 +279,22 @@ color: red;
                         if ($(e).length) {
                             if (!autoCompletion) {
                                 wikiDictionary=concatUniqueToArray(wikiDictionary,$(e)[0].query.search.reduce((acc,result) => {
-                                    (pattern.test(result.title.toLowerCase()) && alreadyChoosenWords.indexOf(result.title.toLowerCase()))?acc.push(result.title):null;
+                                    (pattern.test(result.title.toLowerCase()) && alreadyChoosenWords.indexOf(result.title.toLowerCase())<=-1)?acc.push(result.title):null;
                                     return acc;
                                 },[]).sort());
                             }
                             else {
                                 if (searchingInWiki) {
                                     acWords=concatUniqueToArray(acWords,$(e)[0].query.search.reduce((acc,result) => {
-                                        (pattern.test(result.title.toLowerCase()) && alreadyChoosenWords.indexOf(result.title.toLowerCase()))?acc.push(result.title):null;
+                                        (pattern.test(result.title) && alreadyChoosenWords.indexOf(result.title)<=-1)?acc.push(result.title):null;
                                         return acc;
                                     },[]).sort());
 
-                                    $("#wordsList").empty().append(acWords.map((word) => {
-                                        return $(`<li><span><a>${word}</a></li></span>`);
-                                    }));
+                                    if (searchingInWiki) {
+                                        $("#wordsList").empty().append(acWords.map((word) => {
+                                            return $(`<li><span><a>${word}</a></li></span>`);
+                                        }));
+                                    }
                                 }
                             }
 
@@ -302,14 +316,21 @@ color: red;
             if ($("div#screenGame").is(":visible") && !$("#skribblModBox").length) {
                 $("div#screenGame").after(`
 <div id="skribblModBox" style="display:none">
+<div id="flexList">
 <div id="wordsList"></div>
+</div>
 </div>`);
+
+                if (options.activateAutoTyping==="checked") {
+                    $("#listOptions").show();
+                }
+
                 registerWords=setInterval(() => {
                     words=(Array.isArray(JSON.parse(GM_getValue("wordsList"))[selectedLanguage]))?JSON.parse(GM_getValue("wordsList")):{};
 
-                    if (typeof words[selectedLanguage]==="undefined") {
+                    //if (typeof words[selectedLanguage]==="undefined") {
                         words[selectedLanguage]=[];
-                    }
+                    //}
 
                     if ($(".wordContainer").is(":visible")) {
                         let wordContainerWords=$(".wordContainer .word");
@@ -335,6 +356,12 @@ color: red;
         }
 
         function autoGuessBOT() {
+            if (!$("#listOptions").length && options.activateAutoTyping==="checked") {
+                $("#skribblModBox").prepend(`<div id="listOptions">
+Activer le choix automatique : <input type="checkbox" name="autoChoose" checked>
+</div>`);
+            }
+
             if ($("#overlay").css("opacity")>0) {
                 alreadyChoosenWords=[];
                 acWords=[];
@@ -397,11 +424,11 @@ color: red;
 
                 let typedWordIndexInArray=words.indexOf($("#inputChat").val());
                 if (typedWordIndexInArray>=0) {
-                    unsafeWindow.$("input#inputChat").submit();
                     alreadyChoosenWords.push($("#inputChat").val());
+                    unsafeWindow.$("input#inputChat").submit();
                     $("#wordsList li").eq(typedWordIndexInArray).remove();
                 }
-                else if (words.length) {
+                else if (words.length && $("input[name='autoChoose']").is(":checked")) {
                     unsafeWindow.$("input#inputChat").val($("#wordsList li span").first().text()).submit();
                     alreadyChoosenWords.push($("#wordsList li span").first().text());
                     $("#wordsList li").first().remove();
@@ -523,6 +550,13 @@ color: red;
                 $("#wikiSearch").remove();
                 $("#regexError").remove();
                 $("#wordsList").empty();
+
+                if (!$("#listOptions").length) {
+                   $("#listOptions").append(`<div id="listOptions">
+Activer le choix automatique : <input type="checkbox" name="autoChoose" ${options.autoChoose}>
+</div>`);
+                }
+
                 localStorage.setItem("skribblModOptions",JSON.stringify(options));
             }
         });
@@ -544,6 +578,25 @@ color: red;
                 $("#wikiSearch").remove();
                 $("#regexError").remove();
                 $("#wordsList").empty();
+
+                if ($("#listOptions").length) {
+                   $("#listOptions").remove();
+                }
+
+                localStorage.setItem("skribblModOptions",JSON.stringify(options));
+            }
+        });
+
+        $(document).on("click",`input[name="autoChoose"]`, () => {
+            if (options.activateSkribblMod==="checked") {
+
+                if (options.autoChoose==="") {
+                    options.autoChoose="checked";
+                }
+                else{
+                    options.autoChoose="";
+                }
+
                 localStorage.setItem("skribblModOptions",JSON.stringify(options));
             }
         });
@@ -577,9 +630,8 @@ color: red;
         autoGuess=setInterval(autoGuessBOT,$("#autoGuesserFrequency").val());
 
         $(document).on("keydown","input#inputChat", (e) => {
+            isNotDrawer=new RegExp("_").test($("#currentWord").text());
             if (e.keyCode===13) {
-                isNotDrawer=new RegExp("_").test($("#currentWord").text());
-
                 if (isNotDrawer && $("input[name='activateMod']").is(":checked") && !$("#overlay").is(":visible") && !$(".player.guessedWord .name:contains('You')").length) {
                     if ($("input[name='activateAutocompletion']").is(":checked") || $("input[name='activateAutoTyping']").is(":checked")) {
                         let i=acWords.indexOf($("#inputChat").val());
@@ -591,6 +643,9 @@ color: red;
                             }
                             alreadyChoosenWords.push($("#inputChat").val());
                             $("#wordsList li").eq(i).remove();
+                            $("#regexError").remove();
+                            $("#wikiSearch").remove();
+                            acWords.splice(i,1);
                         }
                     }
                 }
